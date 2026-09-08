@@ -13,6 +13,18 @@
     <link rel="mask-icon" href="%sveltekit.assets%/favicon.svg" color="#000000" />
     <meta name="theme-color" content="#ff3670" />
     <link rel="manifest" href="%sveltekit.assets%/manifest.json" />
+    <script>
+      // Apply the embed theme before first paint: embed URLs (the Share panel's
+      // preview and external embeds) carry ?mode=dark|light. Without the param
+      // (editor pages) this no-ops, leaving theme handling to the app store.
+      (() => {
+        const mode = new URLSearchParams(location.search).get('mode');
+        if (mode === 'dark' || mode === 'light') {
+          document.documentElement.classList.toggle('dark', mode === 'dark');
+          document.documentElement.style.colorScheme = mode;
+        }
+      })();
+    </script>
     <script src="%sveltekit.assets%/config.js"></script>
     %sveltekit.head%
   </head>

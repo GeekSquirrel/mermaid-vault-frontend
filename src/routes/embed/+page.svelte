@@ -20,7 +20,10 @@
 
   const applyMode = (embedMode: EmbedMode) => {
     // Local to the embed document — independent of the editor's theme store.
+    // Mirrors the pre-paint bootstrap in app.html so in-iframe flips keep the
+    // UA canvas (scrollbars, form controls) on the same scheme.
     document.documentElement.classList.toggle('dark', embedMode === 'dark');
+    document.documentElement.style.colorScheme = embedMode;
   };
 
   onMount(() => {
