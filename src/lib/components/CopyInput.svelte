@@ -8,8 +8,16 @@
     value,
     label = 'Copy',
     type = 'url',
-    testID
-  }: { value: string; label?: string; type?: InputType; testID?: string } = $props();
+    testID,
+    /** Set false when the copy action lives outside this row (e.g. a title-row icon button). */
+    showCopy = true
+  }: {
+    value: string;
+    label?: string;
+    type?: InputType;
+    testID?: string;
+    showCopy?: boolean;
+  } = $props();
 </script>
 
 <div class="flex w-full items-center gap-2">
@@ -21,5 +29,7 @@
       event.currentTarget.setSelectionRange(0, event.currentTarget.value.length);
     }} />
 
-  <CopyButton onclick={() => copyToClipboard(value)} {label} />
+  {#if showCopy}
+    <CopyButton onclick={() => copyToClipboard(value)} {label} />
+  {/if}
 </div>

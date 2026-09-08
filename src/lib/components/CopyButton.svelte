@@ -7,13 +7,22 @@
 
   let {
     onclick,
-    label = 'Copy'
-  }: { onclick: (event?: Event) => Promise<unknown>; label?: string } = $props();
+    label = 'Copy',
+    /** Icon-only rendering for title rows; the label becomes the tooltip. */
+    iconOnly = false
+  }: {
+    onclick: (event?: Event) => Promise<unknown>;
+    label?: string;
+    iconOnly?: boolean;
+  } = $props();
 
   let showCheckIcon = $state(false);
 </script>
 
 <Button
+  size={iconOnly ? 'icon' : 'default'}
+  variant="default"
+  title={iconOnly ? label : undefined}
   onclick={async (event) => {
     try {
       showCheckIcon = true;
@@ -36,5 +45,7 @@
       </span>
     {/key}
   </div>
-  {label}
+  {#if !iconOnly}
+    {label}
+  {/if}
 </Button>
