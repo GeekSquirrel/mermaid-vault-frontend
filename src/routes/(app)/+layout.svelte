@@ -29,7 +29,9 @@
     };
     window.addEventListener('popstate', handlePopState);
 
-    if ('serviceWorker' in navigator) {
+    // Production only: the caching service worker would serve stale assets
+    // over Vite's HMR modules during development.
+    if (import.meta.env.PROD && 'serviceWorker' in navigator) {
       navigator.serviceWorker
         .register(`${base}/service-worker.js`, { scope: `${base}/` })
         .then(function (registration) {
