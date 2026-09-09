@@ -807,7 +807,7 @@
           <div class="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center">
             <p class="text-sm font-medium text-destructive">{error}</p>
             <p class="mt-1 text-xs text-muted-foreground">
-              Please make sure the backend server (http://localhost:8080) is running
+              Please make sure the backend server is running and reachable
             </p>
             <Button variant="outline" size="sm" class="mt-4" onclick={() => void loadDiagrams()}>
               Retry
