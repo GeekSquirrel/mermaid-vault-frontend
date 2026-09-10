@@ -6,7 +6,8 @@
   import { urls } from '$/util/state.svelte';
   import { logMermaidChartClick } from '$/util/stats';
   import { cn } from '$/utils';
-  import { mode, setMode } from 'mode-watcher';
+  import { mode } from 'mode-watcher';
+  import { setModeWithFade } from '$/util/themeTransition';
   import type { Component, Snippet } from 'svelte';
   import MermaidTailIcon from '~icons/custom/mermaid-tail';
   import AddIcon from '~icons/material-symbols/add-2-rounded';
@@ -126,7 +127,7 @@
     </span>
     <Switch
       checked={mode.current === 'dark'}
-      onCheckedChange={(dark) => setMode(dark ? 'dark' : 'light')} />
+      onCheckedChange={(dark) => setModeWithFade(dark ? 'dark' : 'light')} />
   </div>
 {/snippet}
 

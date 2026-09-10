@@ -129,3 +129,21 @@ body {
   --background: hsl(222.2 84% 4.9%);
   --border: hsl(217.2 32.6% 17.5%);
 }
+
+/* Theme switch cross-fade duration (View Transitions API), see setModeWithFade */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 250ms;
+  animation-timing-function: ease-in-out;
+}
+
+/* Color fade fallback for browsers without the View Transitions API */
+html.theme-fade body,
+html.theme-fade body * {
+  transition:
+    background-color 250ms ease-in-out,
+    border-color 250ms ease-in-out,
+    color 250ms ease-in-out,
+    fill 250ms ease-in-out,
+    stroke 250ms ease-in-out !important;
+}

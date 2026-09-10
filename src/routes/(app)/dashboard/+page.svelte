@@ -5,7 +5,8 @@
   import * as Dialog from '$/components/ui/dialog';
   import { Switch } from '$/components/ui/switch';
   import { api, type Diagram, type Workspace } from '$lib/services/api';
-  import { mode, setMode } from 'mode-watcher';
+  import { mode } from 'mode-watcher';
+  import { setModeWithFade } from '$/util/themeTransition';
   import { toast } from 'svelte-sonner';
   import { fade, slide } from 'svelte/transition';
   import { flip } from 'svelte/animate';
@@ -706,7 +707,7 @@
           </span>
           <Switch
             checked={mode.current === 'dark'}
-            onCheckedChange={(dark) => setMode(dark ? 'dark' : 'light')} />
+            onCheckedChange={(dark) => setModeWithFade(dark ? 'dark' : 'light')} />
         </div>
       </div>
 
