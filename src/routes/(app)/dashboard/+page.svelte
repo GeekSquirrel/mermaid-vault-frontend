@@ -25,12 +25,20 @@
   import PanelOpenIcon from '~icons/material-symbols/left-panel-open-outline-rounded';
   import RefreshIcon from '~icons/material-symbols/refresh-rounded';
   import SearchIcon from '~icons/material-symbols/search-rounded';
+  import CopyIcon from '~icons/material-symbols/content-copy-outline-rounded';
+  import SmartToyIcon from '~icons/material-symbols/smart-toy-outline-rounded';
+  import { session } from '$/util/session.svelte';
 
   const SIDEBAR_KEY = 'diagrams.sidebarOpen';
   const WORKSPACE_KEY = 'diagrams.currentWorkspaceId';
   const SIDEBAR_WIDTH_KEY = 'diagrams.sidebarWidth';
+  const MCP_ENABLED_KEY = 'diagrams.mcpEnabled';
+  const MCP_TOKEN_KEY = 'diagrams.mcpToken';
   const SIDEBAR_MIN_WIDTH = 220;
   const SIDEBAR_MAX_WIDTH = 440;
+
+  let mcpEnabled = $state(false);
+  let mcpCopied = $state(false);
 
   let diagrams = $state<Diagram[]>([]);
   let workspaces = $state<Workspace[]>([]);
@@ -125,6 +133,10 @@
     if (storedWorkspace) {
       currentWorkspaceId = storedWorkspace;
     }
+    const storedMcp = localStorage.getItem(MCP_ENABLED_KEY);
+    if (storedMcp !== null) {
+      mcpEnabled = storedMcp === 'true';
+    }
     void loadDiagrams();
     void loadWorkspaces().then((list) => {
       // Deep link from the editor breadcrumb: /dashboard?workspace=<id>
@@ -134,6 +146,67 @@
       }
     });
   });
+
+  const toggleMcp = async (enabled: boolean) => {
+    mcpEnabled = enabled;
+    localStorage.setItem(MCP_ENABLED_KEY, String(enabled));
+
+    if (enabled && session.authEnabled) {
+      const existingToken = localStorage.getItem(MCP_TOKEN_KEY);
+      if (!existingToken) {
+        try {
+          const res = await api.auth.createToken({ name: 'MCP Client' });
+          if (res.token) {
+            localStorage.setItem(MCP_TOKEN_KEY, res.token);
+          }
+        } catch (err) {
+          console.error('Failed to pre-generate MCP token', err);
+        }
+      }
+    }
+  };
+
+  const copyMcpConfig = async () => {
+    let token = localStorage.getItem(MCP_TOKEN_KEY);
+    if (session.authEnabled && !token) {
+      try {
+        const res = await api.auth.createToken({ name: 'MCP Client' });
+        if (res.token) {
+          token = res.token;
+          localStorage.setItem(MCP_TOKEN_KEY, token);
+        }
+      } catch {
+        toast.error('Failed to generate API token for MCP');
+        return;
+      }
+    }
+
+    const config = {
+      mcpServers: {
+        'mermaid-vault': {
+          url: `${window.location.origin}/api/mcp`,
+          ...(session.authEnabled && token
+            ? {
+                headers: {
+                  Authorization: `Bearer ${token}`
+                }
+              }
+            : {})
+        }
+      }
+    };
+
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(config, null, 2));
+      mcpCopied = true;
+      toast.success('MCP configuration copied to clipboard');
+      setTimeout(() => {
+        mcpCopied = false;
+      }, 2000);
+    } catch {
+      toast.error('Failed to copy configuration to clipboard');
+    }
+  };
 
   const toggleSidebar = () => {
     sidebarOpen = !sidebarOpen;
@@ -699,6 +772,28 @@
             </div>
           {/each}
         </nav>
+
+        <div class="flex items-center justify-between border-t border-border px-3 py-3">
+          <span class="flex items-center gap-2 text-sm">
+            <SmartToyIcon class="size-5" />
+            <span>MCP</span>
+            {#if mcpEnabled}
+              <button
+                type="button"
+                class="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onclick={copyMcpConfig}
+                title="Copy MCP configuration"
+                aria-label="Copy MCP configuration">
+                {#if mcpCopied}
+                  <CheckIcon class="size-4 text-accent" />
+                {:else}
+                  <CopyIcon class="size-4" />
+                {/if}
+              </button>
+            {/if}
+          </span>
+          <Switch checked={mcpEnabled} onCheckedChange={toggleMcp} />
+        </div>
 
         <div class="flex items-center justify-between border-t border-border px-3 py-3">
           <span class="flex items-center gap-2 text-sm">

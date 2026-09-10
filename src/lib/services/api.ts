@@ -60,6 +60,47 @@ export interface ApiResponse<T = unknown> {
   };
 }
 
+export interface User {
+  id: string;
+  username: string;
+  display_name?: string | null;
+  email?: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AuthStatus {
+  authEnabled: boolean;
+  localEnabled: boolean;
+  oidcEnabled: boolean;
+  needsSetup: boolean;
+}
+
+export interface SetupDto {
+  username: string;
+  password: string;
+  displayName?: string;
+  email?: string;
+}
+
+export interface LoginDto {
+  username: string;
+  password: string;
+}
+
+export interface ApiToken {
+  id: string;
+  user_id: string;
+  name: string;
+  token_prefix: string;
+  created_at: number;
+  last_used_at?: number | null;
+}
+
+export interface CreatedApiToken extends ApiToken {
+  token: string;
+}
+
 export type PreviewTheme = 'light' | 'dark';
 
 export interface SavePreviewDto {
@@ -67,6 +108,11 @@ export interface SavePreviewDto {
   /** sha256 hex of the diagram code the preview was rendered from */
   codeHash: string;
   svg: string;
+}
+
+let onUnauthorizedCallback: (() => void) | null = null;
+export function setOnUnauthorized(cb: () => void): void {
+  onUnauthorizedCallback = cb;
 }
 
 declare global {
@@ -118,12 +164,24 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const fullUrl = buildApiUrl(path);
 
   const response = await fetch(fullUrl, {
+    credentials: 'same-origin',
     ...options,
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers
     }
   });
+
+  if (response.status === 401) {
+    const isAuthEndpoint =
+      path.startsWith('/auth') ||
+      path.startsWith('/api/auth') ||
+      path.includes('login') ||
+      path.includes('status');
+    if (!isAuthEndpoint && onUnauthorizedCallback) {
+      onUnauthorizedCallback();
+    }
+  }
 
   const json: ApiResponse<T> = await response.json().catch(() => {
     throw new Error(`HTTP Error ${response.status}: Failed to parse server response`);
@@ -178,6 +236,35 @@ async function uploadPreview(kind: PreviewKind, id: string, dto: SavePreviewDto)
 }
 
 export const api = {
+  auth: {
+    createToken: (data: { name: string }): Promise<CreatedApiToken> =>
+      request<CreatedApiToken>('/auth/tokens', {
+        body: JSON.stringify(data),
+        method: 'POST'
+      }),
+    deleteToken: (id: string): Promise<{ deleted: boolean }> =>
+      request<{ deleted: boolean }>(`/auth/tokens/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      }),
+    getMe: (): Promise<{ user: User }> => request<{ user: User }>('/auth/me'),
+    getStatus: (): Promise<AuthStatus> => request<AuthStatus>('/auth/status'),
+    listTokens: (): Promise<ApiToken[]> => request<ApiToken[]>('/auth/tokens'),
+    login: (data: LoginDto): Promise<{ user: User }> =>
+      request<{ user: User }>('/auth/login', {
+        body: JSON.stringify(data),
+        method: 'POST'
+      }),
+    logout: (): Promise<{ loggedOut: boolean }> =>
+      request<{ loggedOut: boolean }>('/auth/logout', {
+        method: 'POST'
+      }),
+    setup: (data: SetupDto): Promise<{ user: User }> =>
+      request<{ user: User }>('/auth/setup', {
+        body: JSON.stringify(data),
+        method: 'POST'
+      })
+  },
+
   clearHistoryEntries: (
     type = 'manual',
     diagramId?: string | null

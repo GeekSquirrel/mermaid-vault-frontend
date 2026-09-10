@@ -18,7 +18,9 @@
   import MenuIcon from '~icons/material-symbols/menu-rounded';
   import CommunityIcon from '~icons/material-symbols/person-play-outline-rounded';
   import FolderIcon from '~icons/material-symbols/folder-open-outline-rounded';
+  import LogoutIcon from '~icons/material-symbols/logout-rounded';
   import MermaidChartIcon from './MermaidChartIcon.svelte';
+  import { session } from '$/util/session.svelte';
 
   interface MenuItem {
     label: string;
@@ -35,6 +37,19 @@
   const menuItems: MenuItem[] = $derived([
     { label: 'New', icon: AddIcon, href: urls.current.new, renderer: menuItem },
     { label: 'Dashboard', icon: FolderIcon, href: '/dashboard', renderer: menuItem },
+    ...(session.authEnabled && session.user
+      ? [
+          {
+            href: '#',
+            icon: LogoutIcon,
+            label: 'Sign Out',
+            onclick: () => {
+              void session.logout();
+            },
+            renderer: actionMenuItem
+          }
+        ]
+      : []),
     {
       href: window.location.href,
       icon: DuplicateIcon,
@@ -129,6 +144,20 @@
       checked={mode.current === 'dark'}
       onCheckedChange={(dark) => setModeWithFade(dark ? 'dark' : 'light')} />
   </div>
+{/snippet}
+
+{#snippet actionMenuItem(options: Omit<MenuItem, 'renderer'>)}
+  <button
+    type="button"
+    onclick={options.onclick}
+    class={cn(
+      'flex w-full cursor-pointer items-center justify-start gap-2 border-b-2 p-2 px-3 text-left hover:bg-muted',
+      options.isSectionEnd && 'border-border-dark',
+      options.class
+    )}>
+    <options.icon class="size-5" />
+    {options.label}
+  </button>
 {/snippet}
 
 <Popover.Root>

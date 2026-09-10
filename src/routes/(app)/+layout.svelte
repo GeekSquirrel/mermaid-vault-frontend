@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Toaster } from '$/components/ui/sonner/index.js';
   import { loadingState } from '$/util/loading.svelte';
+  import { session } from '$/util/session.svelte';
   import { toggleDarkTheme } from '$/util/state.svelte';
   import { initHandler } from '$/util/util';
   import { goto } from '$app/navigation';
@@ -15,9 +16,9 @@
 
   let { children }: Props = $props();
 
-  // This can be removed once https://github.com/sveltejs/kit/issues/1612 is fixed.
-  // Then move it into src and vite will bundle it automatically.
   onMount(() => {
+    void session.init();
+
     window.addEventListener('hashchange', () => {
       void initHandler();
     });
@@ -50,21 +51,30 @@
   $effect(() => {
     toggleDarkTheme(mode.current === 'dark');
   });
+
+  $effect(() => {
+    if (session.initialized && session.authEnabled && !session.user) {
+      const currentPath = window.location.pathname + window.location.search;
+      void goto(`${base}/login?returnTo=${encodeURIComponent(currentPath)}`);
+    }
+  });
 </script>
 
 <ModeWatcher />
 <Toaster />
 
 <main class="h-dvh">
-  {@render children()}
+  {#if !session.authEnabled || session.user}
+    {@render children()}
+  {/if}
 </main>
 
-{#if loadingState.loading}
+{#if loadingState.loading || session.loading}
   <div
     class="absolute top-0 left-0 z-50 flex h-screen w-screen justify-center bg-gray-600 align-middle opacity-50">
     <div class="my-auto text-4xl font-bold text-indigo-100">
       <div class="loader mx-auto"></div>
-      <div>{loadingState.message}</div>
+      <div>{loadingState.message || 'Loading...'}</div>
     </div>
   </div>
 {/if}
