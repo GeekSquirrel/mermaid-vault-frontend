@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api, type PreviewTheme } from '$lib/services/api';
   import { sha256Hex } from '$lib/util/hash';
+  import { previewPairMismatched } from '$lib/util/previewSvg';
   import { render } from '$lib/util/mermaid';
   import type { MermaidConfig } from 'mermaid';
   import { mode } from 'mode-watcher';
@@ -24,26 +25,80 @@
 
   const themeOf = (): PreviewTheme => (mode.current === 'dark' ? 'dark' : 'light');
 
+  const themeConfigOf = (theme: PreviewTheme): MermaidConfig => ({
+    securityLevel: 'loose',
+    startOnLoad: false,
+    theme: theme === 'dark' ? 'dark' : 'default'
+  });
+
+  const renderIdOf = (prefix: string) =>
+    `${prefix}-${id.replace(/[^a-zA-Z0-9_-]/g, '')}-${Math.random().toString(36).substring(2, 7)}`;
+
+  // Swaps the SVG in place so the container layout never shifts. Deliberately
+  // no opacity animation here: animating the preview promotes it to its own
+  // compositing layer, and for cards clipped by the viewport edge Chromium
+  // re-rasters tiles mid-animation, showing a distorted frame (curves
+  // flattening). The page-level theme crossfade already masks the swap.
   const injectSvg = (node: HTMLDivElement, content: string | null) => {
-    if (content) {
-      node.innerHTML = content;
-    }
+    node.innerHTML = content ?? '';
     return {
       update(nextContent: string | null) {
-        if (nextContent) {
-          node.innerHTML = nextContent;
-        } else {
-          node.innerHTML = '';
-        }
+        node.innerHTML = nextContent ?? '';
       }
     };
   };
 
+  // Per-diagram cache of both themes' preview SVGs. Theme flips apply the
+  // cached SVG synchronously (before any await in loadFlow) so the swap lands
+  // inside the page transition's update callback: the captured "new" state is
+  // atomic, keeping the crossfade free of mid-animation content mutations
+  // (which misraster cards clipped by the viewport edge).
+  let cache: { code: string; svgs: Partial<Record<PreviewTheme, string>> } = {
+    code: '',
+    svgs: {}
+  };
+
+  const otherThemeOf = (theme: PreviewTheme): PreviewTheme => (theme === 'dark' ? 'light' : 'dark');
+
+  const fetchStored = (theme: PreviewTheme): Promise<string | null> => {
+    if (previewKind === 'diagram') {
+      return api.getDiagramPreview(id, theme);
+    }
+    if (previewKind === 'bookmark') {
+      return api.getBookmarkPreview(id, theme);
+    }
+    return Promise.resolve(null);
+  };
+
+  /** Pre-fetches the counterpart theme's stored preview into the cache. */
+  const warmCache = (gen: number, theme: PreviewTheme): void => {
+    const otherTheme = otherThemeOf(theme);
+    if (cache.svgs[otherTheme]) {
+      return;
+    }
+    fetchStored(otherTheme)
+      .then((stored) => {
+        if (gen === generation && stored && !cache.svgs[otherTheme]) {
+          cache.svgs[otherTheme] = stored;
+        }
+      })
+      .catch(() => {
+        // Cache stays single-theme; the next toggle fetches on demand
+      });
+  };
+
   /**
-   * Load the preview for the current theme: stored server-side SVG first,
-   * then fall back to live client rendering and backfill the server preview.
-   * A generation counter discards results from superseded runs (theme flips,
+   * Load the preview for the current theme: in-memory cache, then stored
+   * server-side SVG, then live client rendering with server backfill. A
+   * generation counter discards results from superseded runs (theme flips,
    * re-entries) so stale async results never overwrite newer ones.
+   *
+   * Mermaid geometry depends on the font metrics of the rendering
+   * environment, so stored light/dark previews uploaded by different
+   * environments (machines, the server renderer) have different intrinsic
+   * sizes and visibly jump when swapped. When a stored preview disagrees
+   * with the one on screen, it is skipped and re-rendered locally; as both
+   * themes get visited, the stored pair converges to one environment.
    */
   const loadFlow = async () => {
     const gen = ++generation;
@@ -53,21 +108,35 @@
       svgContent = null;
       return;
     }
+    // The diagram was edited: cached previews are stale by definition.
+    if (cache.code !== code) {
+      cache = { code, svgs: {} };
+    }
+
+    const theme = themeOf();
+    const cached = cache.svgs[theme];
+    if (cached && !previewPairMismatched(svgContent, cached)) {
+      error = null;
+      loading = false;
+      svgContent = cached;
+      return;
+    }
+
     loading = true;
     error = null;
 
-    const theme = themeOf();
-
     if (previewKind) {
       try {
-        const stored =
-          previewKind === 'diagram'
-            ? await api.getDiagramPreview(id, theme)
-            : await api.getBookmarkPreview(id, theme);
+        const stored = await fetchStored(theme);
         if (gen !== generation) return;
-        if (stored) {
+        // A stored preview rendered in a different environment than the one
+        // currently on screen would visibly shift when swapped in; skip it
+        // so the live render below replaces it.
+        if (stored && !previewPairMismatched(svgContent, stored)) {
+          cache.svgs[theme] = stored;
           svgContent = stored;
           loading = false;
+          warmCache(gen, theme);
           return;
         }
       } catch {
@@ -76,18 +145,9 @@
     }
 
     try {
-      const renderId =
-        'preview-' +
-        id.replace(/[^a-zA-Z0-9_-]/g, '') +
-        '-' +
-        Math.random().toString(36).substring(2, 7);
-      const config: MermaidConfig = {
-        securityLevel: 'loose',
-        startOnLoad: false,
-        theme: theme === 'dark' ? 'dark' : 'default'
-      };
-      const res = await render(config, code, renderId);
+      const res = await render(themeConfigOf(theme), code, renderIdOf('preview'));
       if (gen !== generation) return;
+      cache.svgs[theme] = res.svg;
       svgContent = res.svg;
       loading = false;
 
@@ -159,7 +219,7 @@
         {error}
       </span>
     </div>
-  {:else if loading}
+  {:else if loading && !svgContent}
     <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
       <LoadingIcon class="size-4 animate-spin" />
       <span>Rendering preview...</span>
