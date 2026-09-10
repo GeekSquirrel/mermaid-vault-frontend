@@ -1,8 +1,9 @@
+import path from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { FileSystemIconLoader } from 'unplugin-icons/loaders';
 import Icons from 'unplugin-icons/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, searchForWorkspaceRoot } from 'vite';
 import devtoolsJson from 'vite-plugin-devtools-json';
 
 /**
@@ -35,6 +36,13 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    fs: {
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        searchForWorkspaceRoot(path.resolve(process.cwd(), '..')),
+        '/app'
+      ]
+    },
     proxy: {
       '/api': {
         target: process.env.MERMAID_API_PROXY_TARGET || 'http://localhost:8080',

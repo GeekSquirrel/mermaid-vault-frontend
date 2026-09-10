@@ -3,12 +3,14 @@ FROM node:24-alpine AS mermaid-vault-frontend-dependencies
 RUN apk --no-cache add build-base git python3 && \
     rm -rf /var/cache/apk/*
 
-RUN corepack enable pnpm
+RUN corepack enable pnpm && \
+    corepack prepare pnpm@12.3.4 --activate
 
 WORKDIR /app
 
 COPY ./package.json .
 COPY ./pnpm-lock.yaml .
+COPY ./pnpm-workspace.yaml* ./
 
 RUN pnpm install
 

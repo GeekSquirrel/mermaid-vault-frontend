@@ -1,0 +1,4 @@
+allowBuilds:
+  svelte-preprocess: true
+  esbuild: true
+  deasync: true
