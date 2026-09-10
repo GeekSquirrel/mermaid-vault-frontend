@@ -1,6 +1,6 @@
+import Hammer from 'hammerjs';
 import type { Point } from 'mermaid/dist/types.js';
 import panzoom from 'svg-pan-zoom';
-import Hammer from 'hammerjs';
 
 export type RenderEngineMode = 'standard' | 'gpu' | 'canvas';
 
@@ -698,6 +698,20 @@ export class CanvasEngine implements ViewportEngine {
       if (!clone.getAttribute('xmlns:xlink')) {
         clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
       }
+
+      // Ensure foreignObject content inside standalone SVG image rasterization
+      // resets default browser paragraph margins to prevent vertical text drift.
+      const resetStyle = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+      resetStyle.textContent = `
+        p {
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        body, div, span, p {
+          box-sizing: border-box;
+        }
+      `;
+      clone.insertBefore(resetStyle, clone.firstChild);
 
       let svgString = clone.outerHTML
         .replaceAll('<br>', '<br/>')

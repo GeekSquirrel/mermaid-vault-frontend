@@ -41,6 +41,13 @@ export const renderAndPlaceDiagram = async ({
     throw new Error('graph-div not found');
   }
   if (rough) {
+    const originalStyles = Array.from(graphDiv.querySelectorAll('style')).map((s) =>
+      s.cloneNode(true)
+    );
+    const originalDefs = Array.from(graphDiv.querySelectorAll('defs')).map((d) =>
+      d.cloneNode(true)
+    );
+
     const svg2roughjs = new Svg2Roughjs(containerSelector);
     svg2roughjs.svg = graphDiv;
     await svg2roughjs.sketch();
@@ -56,6 +63,24 @@ export const renderAndPlaceDiagram = async ({
     sketch.setAttribute('width', '100%');
     sketch.setAttribute('viewBox', `0 0 ${width} ${height}`);
     sketch.style.maxWidth = '100%';
+
+    // Re-attach original styles and defs so the sketched SVG remains fully self-contained
+    for (const defs of originalDefs) {
+      sketch.insertBefore(defs, sketch.firstChild);
+    }
+    for (const style of originalStyles) {
+      sketch.insertBefore(style, sketch.firstChild);
+    }
+
+    const resetStyle = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    resetStyle.textContent = `
+      #graph-div p, svg p {
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+    `;
+    sketch.insertBefore(resetStyle, sketch.firstChild);
+
     graphDiv = sketch;
   } else {
     graphDiv.setAttribute('height', '100%');

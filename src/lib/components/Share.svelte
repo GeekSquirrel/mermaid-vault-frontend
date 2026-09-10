@@ -34,7 +34,7 @@
   import PngIcon from '~icons/material-symbols/photo-outline-rounded';
   import SettingsIcon from '~icons/material-symbols/settings-outline-rounded';
   import ShareIcon from '~icons/material-symbols/share';
-  import SvgIcon from '~icons/material-symbols/polyline-outline-rounded';
+  import SvgIcon from '~icons/hugeicons/svg-02';
   import ViewLinkIcon from '~icons/material-symbols/visibility-outline-rounded';
   import WebComponentIcon from '~icons/material-symbols/deployed-code-outline-rounded';
   import WidthIcon from '~icons/material-symbols/width-rounded';
