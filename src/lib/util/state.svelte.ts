@@ -53,13 +53,34 @@ let validatedCurrent = $state.raw<ValidatedState>(
   validatedStateOf(initialState, serializeState(initialState))
 );
 
+let lastParsedCode: string | undefined;
+let lastParseResult:
+  | {
+      diagramType?: string;
+      error?: Error;
+      errorMarkers: MarkerData[];
+    }
+  | undefined;
+
 const processState = async (state: State) => {
   const processed = validatedStateOf(state, '');
   // No changes should be done to fields part of `state`.
   try {
     processed.serialized = serializeState(state);
-    const { diagramType } = await parse(state.code);
-    processed.diagramType = diagramType;
+    if (state.code === lastParsedCode && lastParseResult) {
+      processed.diagramType = lastParseResult.diagramType;
+      processed.error = lastParseResult.error;
+      processed.errorMarkers = lastParseResult.errorMarkers;
+    } else {
+      const { diagramType } = await parse(state.code);
+      processed.diagramType = diagramType;
+      lastParsedCode = state.code;
+      lastParseResult = {
+        diagramType,
+        error: undefined,
+        errorMarkers: []
+      };
+    }
   } catch (error) {
     processed.error = error as Error;
     errorDebug();
@@ -99,6 +120,12 @@ const processState = async (state: State) => {
         console.error('Error without line helper', error);
       }
     }
+    lastParsedCode = state.code;
+    lastParseResult = {
+      diagramType: undefined,
+      error: processed.error,
+      errorMarkers: processed.errorMarkers
+    };
   }
   return processed;
 };
@@ -118,6 +145,10 @@ const persistAndProcess = (): void => {
     updateHash?.(processed.serialized);
   });
 };
+
+const debouncedPersistAndProcess = debounce(() => {
+  persistAndProcess();
+}, 250);
 
 // The single mutation gateway: every update function funnels its writes
 // through here. The mutator runs untracked so effects that call an update
@@ -244,7 +275,24 @@ const applyPartial = (state: State, newState: Partial<State>): void => {
   Object.assign(state, newState, { renderCount });
 };
 
+export const updatePanZoom = (pan: { x: number; y: number }, zoom: number): void => {
+  untrack(() => {
+    input.pan = pan;
+    input.zoom = zoom;
+    debouncedPersistAndProcess();
+  });
+};
+
 export const updateCodeStore = (newState: Partial<State>): void => {
+  const keys = Object.keys(newState);
+  if (keys.length > 0 && keys.every((k) => k === 'pan' || k === 'zoom')) {
+    untrack(() => {
+      if (newState.pan !== undefined) input.pan = newState.pan;
+      if (newState.zoom !== undefined) input.zoom = newState.zoom;
+      debouncedPersistAndProcess();
+    });
+    return;
+  }
   update((state) => applyPartial(state, newState));
 };
 

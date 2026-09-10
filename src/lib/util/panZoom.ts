@@ -1,122 +1,126 @@
 import type { State } from '$/types';
-import Hammer from 'hammerjs';
 import type { Point } from 'mermaid/dist/types.js';
-import panzoom from 'svg-pan-zoom';
-type PanZoom = typeof panzoom;
+import {
+  type RenderEngineMode,
+  type ViewportEngine,
+  StandardEngine,
+  GpuEngine,
+  CanvasEngine,
+  cleanSvgElement
+} from './viewportEngine';
+
+export type { RenderEngineMode };
+
+const ENGINE_STORAGE_KEY = 'mermaid-render-engine';
+
+export const getStoredEngineMode = (): RenderEngineMode => {
+  if (typeof window === 'undefined') return 'standard';
+  const saved = localStorage.getItem(ENGINE_STORAGE_KEY);
+  if (saved === 'gpu' || saved === 'canvas' || saved === 'standard') {
+    return saved;
+  }
+  return 'standard';
+};
+
+export const setStoredEngineMode = (mode: RenderEngineMode) => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(ENGINE_STORAGE_KEY, mode);
+  }
+};
 
 export class PanZoomState {
-  private pan?: Point;
-  private zoom?: number;
-  private pzoom: PanZoom | undefined;
+  private engineMode: RenderEngineMode = getStoredEngineMode();
+  private engine: ViewportEngine | undefined;
+  private currentElement?: SVGElement;
+  private currentPan?: Point;
+  private currentZoom?: number;
   private isDirty = false;
-  private resizeObserver: ResizeObserver;
+  private resizeObserver?: ResizeObserver;
 
-  public isPanEnabled: boolean;
+  public isPanEnabled = true;
   public onPanZoomChange?: (pan: Point, zoom: number) => void;
+  public onEngineChange?: (mode: RenderEngineMode) => void;
 
   constructor() {
-    this.isPanEnabled = true;
-    this.resizeObserver = new ResizeObserver(() => {
-      this.resize();
-      if (!this.isDirty) {
-        this.reset();
-      }
-    });
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.resize();
+        if (!this.isDirty) {
+          this.reset();
+        }
+      });
+    }
+  }
+
+  public getEngineMode(): RenderEngineMode {
+    return this.engineMode;
+  }
+
+  public setEngineMode(mode: RenderEngineMode): void {
+    if (this.engineMode === mode) return;
+    this.engineMode = mode;
+    setStoredEngineMode(mode);
+
+    if (this.currentElement) {
+      this.engine?.destroy();
+      cleanSvgElement(this.currentElement);
+      this.createEngine();
+      this.engine?.init(this.currentElement, {
+        isPanEnabled: this.isPanEnabled,
+        onPanZoomChange: (p, z) => {
+          this.currentPan = p;
+          this.currentZoom = z;
+          this.isDirty = true;
+          this.onPanZoomChange?.(p, z);
+        }
+      });
+      this.reset();
+    }
+    this.onEngineChange?.(mode);
+  }
+
+  private createEngine(): void {
+    switch (this.engineMode) {
+      case 'gpu':
+        this.engine = new GpuEngine();
+        break;
+      case 'canvas':
+        this.engine = new CanvasEngine();
+        break;
+      case 'standard':
+      default:
+        this.engine = new StandardEngine();
+        break;
+    }
   }
 
   public updateElement(diagramView: SVGElement, { pan, zoom }: Pick<State, 'pan' | 'zoom'>) {
-    this.pzoom?.destroy();
-    let hammer: HammerManager | undefined;
-    this.pzoom = panzoom(diagramView, {
-      center: true,
-      controlIconsEnabled: false,
-      customEventsHandler: {
-        haltEventListeners: ['touchstart', 'touchend', 'touchmove', 'touchleave', 'touchcancel'],
-        init: function (options) {
-          const instance = options.instance;
-          let initialScale = 1;
-          let pannedX = 0;
-          let pannedY = 0;
-          hammer = new Hammer(options.svgElement);
+    this.engine?.destroy();
+    this.currentElement = diagramView;
+    this.currentPan = pan;
+    this.currentZoom = zoom;
 
-          const resetPanned = () => {
-            pannedX = 0;
-            pannedY = 0;
-          };
-          const handlePan = (event: HammerInput) => {
-            instance.panBy({ x: event.deltaX - pannedX, y: event.deltaY - pannedY });
-            pannedX = event.deltaX;
-            pannedY = event.deltaY;
-          };
+    this.createEngine();
 
-          hammer.get('pinch').set({ enable: true });
-          hammer.on('panstart panmove', function (event) {
-            if (event.type === 'panstart') {
-              resetPanned();
-            }
-            handlePan(event);
-          });
-          hammer.on('pinchstart pinchmove', function (event) {
-            if (event.type === 'pinchstart') {
-              initialScale = instance.getZoom();
-              resetPanned();
-            }
-            instance.zoomAtPoint(initialScale * event.scale, {
-              x: event.center.x,
-              y: event.center.y
-            });
-            handlePan(event);
-          });
-          options.svgElement.addEventListener('touchmove', function (event) {
-            event.preventDefault();
-          });
-        },
-        destroy: function () {
-          hammer?.destroy();
-        }
-      },
-      fit: true,
-      maxZoom: 12,
-      minZoom: 0.2,
-      onPan: (pan) => {
-        this.pan = pan;
-        this.zoom = this.pzoom?.getZoom();
+    this.engine?.init(diagramView, {
+      pan,
+      zoom,
+      isPanEnabled: this.isPanEnabled,
+      onPanZoomChange: (p, z) => {
+        this.currentPan = p;
+        this.currentZoom = z;
         this.isDirty = true;
-        if (this.zoom) {
-          this.onPanZoomChange?.(this.pan, this.zoom);
-        }
-      },
-      onZoom: (zoom) => {
-        this.zoom = zoom;
-        this.pan = this.pzoom?.getPan();
-        this.isDirty = true;
-        if (this.pan) {
-          this.onPanZoomChange?.(this.pan, this.zoom);
-        }
-      },
-      panEnabled: true,
-      zoomEnabled: true
+        this.onPanZoomChange?.(p, z);
+      }
     });
 
-    this.pzoom.disableDblClickZoom();
+    this.resizeObserver?.disconnect();
+    this.resizeObserver?.observe(diagramView);
 
-    this.resizeObserver.disconnect();
-    this.resizeObserver.observe(diagramView);
-
-    if (pan && zoom && Number.isFinite(zoom) && Number.isFinite(pan.x) && Number.isFinite(pan.y)) {
-      this.restorePanZoom(pan, zoom);
-    } else {
-      this.reset();
-    }
-
-    // we start out with both pan and zoom enabled so that the tool can auto position view refreshed
-    // then set enable/disable pan based on state
     if (this.isPanEnabled) {
-      this.pzoom.enablePan();
-      this.pzoom.enableZoom();
+      this.engine?.enablePanZoom();
     } else {
-      this.pzoom.disableZoom();
-      this.pzoom.disablePan();
+      this.engine?.disablePanZoom();
     }
 
     if (pan === undefined && zoom === undefined) {
@@ -125,33 +129,36 @@ export class PanZoomState {
   }
 
   public restorePanZoom(pan: Point, zoom: number) {
-    if (!this.pzoom) {
-      console.error('PanZoomState.restorePanZoom: pzoom is not initialized');
-      return;
-    }
-    this.pzoom.zoom(zoom);
-    this.pzoom.pan(pan);
+    this.currentPan = pan;
+    this.currentZoom = zoom;
+    this.engine?.restorePanZoom(pan, zoom);
   }
 
   public resize() {
-    this.pzoom?.resize();
+    this.engine?.resize();
     if (!this.isDirty) {
       this.reset();
     }
   }
 
   public zoomIn() {
-    this.pzoom?.zoomIn();
+    this.engine?.zoomIn();
   }
 
   public zoomOut() {
-    this.pzoom?.zoomOut();
+    this.engine?.zoomOut();
   }
 
   public reset() {
-    this.pzoom?.reset();
-    // Zoom out a bit to avoid overlap with the toolbar
-    this.pzoom?.zoom(0.875);
+    this.engine?.reset();
     this.isDirty = false;
+  }
+
+  public getPan(): Point | undefined {
+    return this.engine?.getPan() ?? this.currentPan;
+  }
+
+  public getZoom(): number | undefined {
+    return this.engine?.getZoom() ?? this.currentZoom;
   }
 }

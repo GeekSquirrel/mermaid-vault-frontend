@@ -44,7 +44,13 @@ const fixForeignObjectClipping = (svg: HTMLElement) => {
 
 const getSvgElement = () => {
   const svgElement = document.querySelector('#container svg')?.cloneNode(true) as HTMLElement;
-  svgElement.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+  if (svgElement) {
+    svgElement.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    svgElement.style.transform = '';
+    svgElement.style.opacity = '1';
+    svgElement.style.position = '';
+    svgElement.style.display = 'block';
+  }
   return svgElement;
 };
 
