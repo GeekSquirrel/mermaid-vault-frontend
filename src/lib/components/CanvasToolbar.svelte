@@ -10,6 +10,7 @@
   import ArrowsToCircleIcon from '~icons/material-symbols/screenshot-frame-2';
   import MagnifyingGlassMinusIcon from '~icons/material-symbols/zoom-out';
   import MagnifyingGlassPlusIcon from '~icons/material-symbols/zoom-in';
+  import PerformanceToggle from '$/components/PerformanceToggle.svelte';
 
   let {
     /** Embed/narrow frames: keep zoom buttons visible below the `sm` breakpoint. */
@@ -70,6 +71,8 @@
     onclick={() => panZoomState.zoomIn()}>
     <MagnifyingGlassPlusIcon />
   </Button>
+  <Separator orientation="vertical" class="h-5 min-h-0 w-px border-0 bg-current opacity-30" />
+  <PerformanceToggle {panZoomState} />
   {#if fullScreenHref}
     <Separator orientation="vertical" class="h-5 min-h-0 w-px border-0 bg-current opacity-30" />
     <Button variant="ghost" size="icon" title="Full Screen" href={fullScreenHref} target="_blank">

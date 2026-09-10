@@ -22,6 +22,8 @@ export interface Tab {
   icon: Component;
 }
 
+export type RenderEngineMode = 'standard' | 'gpu' | 'canvas';
+
 export interface State {
   code: string;
   // Baseline mermaid config passed to mermaid.initialize(); diagrams may also
@@ -36,6 +38,7 @@ export interface State {
   pan?: { x: number; y: number };
   zoom?: number;
   loader?: LoaderConfig;
+  renderEngine?: RenderEngineMode;
 }
 
 export interface ValidatedState extends State {

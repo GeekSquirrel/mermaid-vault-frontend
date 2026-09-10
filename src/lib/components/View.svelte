@@ -3,7 +3,7 @@
   import { recordRenderTime, shouldRefreshView } from '$/util/autoSync';
   import { PanZoomState } from '$/util/panZoom';
   import { renderAndPlaceDiagram } from '$/util/renderView';
-  import { updateCodeStore, validatedState } from '$/util/state.svelte';
+  import { updateCodeStore, updatePanZoom, validatedState } from '$/util/state.svelte';
   import { saveStatistics } from '$/util/stats';
   import FontAwesome, { mayContainFontAwesome } from '$lib/components/FontAwesome.svelte';
   import uniqueID from 'lodash-es/uniqueId';
@@ -28,7 +28,7 @@
   // Set up panZoom state observer to update the store when pan/zoom changes
   const setupPanZoomObserver = () => {
     panZoomState.onPanZoomChange = (pan, zoom) => {
-      updateCodeStore({ pan, zoom });
+      updatePanZoom(pan, zoom);
     };
   };
 
