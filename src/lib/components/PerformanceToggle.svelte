@@ -4,7 +4,7 @@
   import type { PanZoomState, RenderEngineMode } from '$/util/panZoom';
   import RocketIcon from '~icons/material-symbols/rocket-launch-outline-rounded';
   import CanvasIcon from '~icons/material-symbols/photo-outline-rounded';
-  import SvgIcon from '~icons/material-symbols/polyline-outline-rounded';
+  import SvgIcon from '~icons/hugeicons/svg-02';
   import CheckIcon from '~icons/material-symbols/check-rounded';
   import { onMount } from 'svelte';
 
@@ -27,30 +27,13 @@
 
 <DropdownMenu.Root>
   <DropdownMenu.Trigger class="flex items-center">
-    <Button
-      variant="ghost"
-      size="sm"
-      class={[
-        'relative flex items-center gap-1 px-2 text-xs transition-colors',
-        activeMode !== 'standard' && 'font-medium text-primary'
-      ]}
-      title={`Rendering Engine: ${activeMode.toUpperCase()}`}>
+    <Button variant="ghost" size="icon" title={`Rendering Engine: ${activeMode.toUpperCase()}`}>
       {#if activeMode === 'gpu'}
         <RocketIcon class="size-4 text-emerald-500 dark:text-emerald-400" />
       {:else if activeMode === 'canvas'}
         <CanvasIcon class="size-4 text-sky-500 dark:text-sky-400" />
       {:else}
         <SvgIcon class="size-4 opacity-75" />
-      {/if}
-      <span class="hidden text-[10px] tracking-wider uppercase opacity-80 md:inline"
-        >{activeMode}</span>
-      {#if activeMode !== 'standard'}
-        <span class="absolute -top-0.5 -right-0.5 flex size-2">
-          <span
-            class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"
-          ></span>
-          <span class="relative inline-flex size-2 rounded-full bg-emerald-500"></span>
-        </span>
       {/if}
     </Button>
   </DropdownMenu.Trigger>
