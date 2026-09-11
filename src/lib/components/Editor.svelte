@@ -1,6 +1,5 @@
 <script lang="ts">
-  import DesktopEditor from '$/components/DesktopEditor.svelte';
-  import MobileEditor from '$/components/MobileEditor.svelte';
+  import type { Component } from 'svelte';
   import { TID } from '$/constants';
   import { updateCode, validatedState } from '$lib/util/state.svelte';
   import { debounce } from 'lodash-es';
@@ -10,6 +9,27 @@
   const onUpdate = (text: string) => {
     updateCode(text);
   };
+
+  // The code editors (Monaco on desktop, CodeMirror on mobile) are large
+  // dependencies; loading them dynamically keeps them off the critical path so
+  // the diagram canvas can render first.
+  let CodeEditor: Component<{ isMobile: boolean; onUpdate: (text: string) => void }> | undefined =
+    $state();
+  $effect(() => {
+    let cancelled = false;
+    void (
+      isMobile
+        ? import('$/components/MobileEditor.svelte')
+        : import('$/components/DesktopEditor.svelte')
+    ).then((module) => {
+      if (!cancelled) {
+        CodeEditor = module.default;
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
 
   let showError = $state(false);
 
@@ -32,10 +52,15 @@
 </script>
 
 <div class="flex h-full flex-col">
-  {#if isMobile}
-    <MobileEditor {onUpdate} />
+  {#if CodeEditor}
+    <CodeEditor {isMobile} {onUpdate} />
   {:else}
-    <DesktopEditor {onUpdate} />
+    <div
+      class="flex h-full items-center justify-center text-sm text-muted-foreground"
+      role="status"
+      aria-label="Loading editor">
+      Loading editor…
+    </div>
   {/if}
   {#if showError && validatedState.current.error instanceof Error}
     <div class="flex flex-col text-sm" data-testid={TID.errorContainer}>
