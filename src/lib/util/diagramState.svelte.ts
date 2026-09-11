@@ -1,5 +1,5 @@
 import { api } from '$lib/services/api';
-import { inputState, updateCode } from '$lib/util/state.svelte';
+import { inputState, resetInputForPendingLoad, updateCode } from '$lib/util/state.svelte';
 import { debounce } from 'lodash-es';
 import { SvelteURL, SvelteURLSearchParams } from 'svelte/reactivity';
 
@@ -113,6 +113,11 @@ export class DiagramState {
 
     this.id = idParam;
     this.saveStatus = 'idle';
+
+    // Blank the editor while fetching: the persisted input state still holds
+    // the previously opened diagram, and showing (or rendering) it before the
+    // fetched content arrives is exactly the stale flash this avoids.
+    resetInputForPendingLoad();
 
     try {
       const diagram = await api.getDiagram(idParam);

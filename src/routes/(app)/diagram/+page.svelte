@@ -23,7 +23,14 @@
   import { shouldShowEditorChooser } from '$/util/migration/domainMigration';
   import { PanZoomState } from '$/util/panZoom';
   import { diagramState } from '$/util/diagramState.svelte';
-  import { validatedState, urls, inputState } from '$/util/state.svelte';
+  import {
+    initURLSubscription,
+    resetInputForPendingLoad,
+    validatedState,
+    urls,
+    inputState,
+    verifyState
+  } from '$/util/state.svelte';
   import { logEvent } from '$/util/stats';
   import { initHandler } from '$/util/util';
   import { onMount, tick } from 'svelte';
@@ -80,6 +87,20 @@
   );
   let isViewMode = $state(true);
   let showEditorChooser = $state(false);
+  // With ?id= the diagram comes from the backend: boot defers all
+  // render-pipeline work until the fetch resolves, so the stale state
+  // persisted in localStorage is never validated or rendered. The View stays
+  // unmounted until then and mounts directly with the fetched diagram.
+  const urlHasDiagramId =
+    typeof window !== 'undefined' && Boolean(new URLSearchParams(window.location.search).get('id'));
+  let initialLoadDone = $state(!urlHasDiagramId);
+  if (urlHasDiagramId) {
+    // Blank the persisted state synchronously at component construction —
+    // before any child (the lazily imported code editor) can mount and
+    // display it, so not even a single frame of the previous diagram's code
+    // can appear while the fetch is in flight.
+    resetInputForPendingLoad();
+  }
 
   $effect(() => {
     if (isMobile && isViewMode) {
@@ -94,9 +115,7 @@
     if (savedPanelWidth >= PANEL_MIN_WIDTH) {
       panelWidth = Math.min(savedPanelWidth, PANEL_MAX_WIDTH);
     }
-    await initHandler();
-    await diagramState.loadFromUrl();
-    setCurrentDiagramId(diagramState.id);
+    await initHandler({ deferRender: urlHasDiagramId });
     showEditorChooser = shouldShowEditorChooser();
     window.addEventListener('appinstalled', () => {
       logEvent('pwaInstalled', { isMobile });
@@ -104,7 +123,23 @@
   });
 
   afterNavigate(async () => {
+    // window.location (not the navigation argument): ssr=false keeps this
+    // client-only, and the URL is already updated when afterNavigate runs.
+    const hasId = Boolean(new URLSearchParams(window.location.search).get('id'));
+    if (hasId) {
+      // Clear the canvas until this diagram's data arrives, so a previously
+      // opened diagram is never left on screen while switching.
+      initialLoadDone = false;
+    }
     await diagramState.loadFromUrl();
+    if (hasId) {
+      // The fetched state is in place: start mirroring it into the URL hash
+      // and restore the pan/zoom flag. The render kick itself happened inside
+      // loadFromUrl → updateCode.
+      initURLSubscription();
+      verifyState();
+    }
+    initialLoadDone = true;
     setCurrentDiagramId(diagramState.id);
   });
 
@@ -334,19 +369,21 @@
             'relative h-full w-full flex-col overflow-hidden',
             !isViewMode ? 'hidden' : 'flex'
           ]}>
-          <View {panZoomState} shouldShowGrid={validatedState.current.grid} />
-          <div class="absolute top-0 right-0 left-0 mx-auto w-fit">
-            <CanvasToolbar
-              {panZoomState}
-              fullScreenHref={urls.current.view}
-              onSave={() => void handleSaveDiagram()}
-              onBookmark={handleBookmarkDiagram}>
-              {#snippet leading()}
-                <StyleToggles />
-              {/snippet}
-            </CanvasToolbar>
-          </div>
-          <div class="absolute right-0 bottom-0"><VersionSecurityToolbar /></div>
+          {#if initialLoadDone}
+            <View {panZoomState} shouldShowGrid={validatedState.current.grid} />
+            <div class="absolute top-0 right-0 left-0 mx-auto w-fit">
+              <CanvasToolbar
+                {panZoomState}
+                fullScreenHref={urls.current.view}
+                onSave={() => void handleSaveDiagram()}
+                onBookmark={handleBookmarkDiagram}>
+                {#snippet leading()}
+                  <StyleToggles />
+                {/snippet}
+              </CanvasToolbar>
+            </div>
+            <div class="absolute right-0 bottom-0"><VersionSecurityToolbar /></div>
+          {/if}
         </div>
 
         <!-- Mobile Share Panel -->
@@ -378,19 +415,21 @@
         </Resizable.Pane>
         <Resizable.Handle class="mr-1 hidden opacity-0 sm:block" />
         <Resizable.Pane minSize={15} class="relative flex h-full flex-1 flex-col overflow-hidden">
-          <View {panZoomState} shouldShowGrid={validatedState.current.grid} />
-          <div class="absolute top-0 right-0">
-            <CanvasToolbar
-              {panZoomState}
-              fullScreenHref={urls.current.view}
-              onSave={() => void handleSaveDiagram()}
-              onBookmark={handleBookmarkDiagram}>
-              {#snippet leading()}
-                <StyleToggles />
-              {/snippet}
-            </CanvasToolbar>
-          </div>
-          <div class="absolute right-0 bottom-0"><VersionSecurityToolbar /></div>
+          {#if initialLoadDone}
+            <View {panZoomState} shouldShowGrid={validatedState.current.grid} />
+            <div class="absolute top-0 right-0">
+              <CanvasToolbar
+                {panZoomState}
+                fullScreenHref={urls.current.view}
+                onSave={() => void handleSaveDiagram()}
+                onBookmark={handleBookmarkDiagram}>
+                {#snippet leading()}
+                  <StyleToggles />
+                {/snippet}
+              </CanvasToolbar>
+            </div>
+            <div class="absolute right-0 bottom-0"><VersionSecurityToolbar /></div>
+          {/if}
         </Resizable.Pane>
         {#if activePanel}
           <!-- Overlay drawer: intentionally outside the pane group so resizing

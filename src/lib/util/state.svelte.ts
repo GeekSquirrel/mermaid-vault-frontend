@@ -62,17 +62,77 @@ let lastParseResult:
     }
   | undefined;
 
-const processState = async (state: State) => {
+// Token guarding publishes: only the newest applied state may write
+// `validatedCurrent`, so a slow parse of an older code can never clobber the
+// state of a newer one. processState publishes an interim result before its
+// async parse finishes, letting the view render in parallel with parsing.
+let stateToken = 0;
+
+const publishValidated = (processed: ValidatedState): void => {
+  validatedCurrent = processed;
+  updateHash?.(processed.serialized);
+};
+
+const buildParseErrorState = (state: State, processed: ValidatedState, error: unknown): void => {
+  processed.error = error as Error;
+  errorDebug();
+  console.error(error);
+  if (error && typeof error === 'object' && 'hash' in error) {
+    try {
+      let errorString = processed.error.toString();
+      const errorLineText = extractErrorLineText(errorString);
+      const realLineNumber = findMostRelevantLineNumber(errorLineText, state.code);
+
+      let first_line: number, last_line: number, first_column: number, last_column: number;
+      try {
+        ({ first_line, last_line, first_column, last_column } = (error.hash as ErrorHash).loc);
+      } catch {
+        const lineNo = findMostRelevantLineNumber(errorString, state.code);
+        first_line = lineNo;
+        last_line = lineNo + 1;
+        first_column = 0;
+        last_column = 0;
+      }
+
+      if (realLineNumber !== -1) {
+        errorString = replaceLineNumberInErrorMessage(errorString, realLineNumber);
+      }
+
+      processed.error = new Error(errorString);
+      const marker: MarkerData = {
+        endColumn: last_column + (first_column === last_column ? 0 : 5),
+        endLineNumber: last_line + (realLineNumber - first_line),
+        message: errorString || 'Syntax error',
+        severity: 8, // Error
+        startColumn: first_column,
+        startLineNumber: realLineNumber
+      };
+      processed.errorMarkers = [marker];
+    } catch (error) {
+      console.error('Error without line helper', error);
+    }
+  }
+};
+
+const processState = async (state: State, token: number) => {
   const processed = validatedStateOf(state, '');
   // No changes should be done to fields part of `state`.
-  try {
-    processed.serialized = serializeState(state);
-    if (state.code === lastParsedCode && lastParseResult) {
-      processed.diagramType = lastParseResult.diagramType;
-      processed.error = lastParseResult.error;
-      processed.errorMarkers = lastParseResult.errorMarkers;
-    } else {
+  processed.serialized = serializeState(state);
+  if (state.code === lastParsedCode && lastParseResult) {
+    processed.diagramType = lastParseResult.diagramType;
+    processed.error = lastParseResult.error;
+    processed.errorMarkers = lastParseResult.errorMarkers;
+  } else {
+    // Publish immediately so rendering starts while the parse is in flight;
+    // diagramType and error markers patch in when the parse resolves.
+    if (token === stateToken) {
+      publishValidated(processed);
+    }
+    try {
       const { diagramType } = await parse(state.code);
+      if (token !== stateToken) {
+        return processed;
+      }
       processed.diagramType = diagramType;
       lastParsedCode = state.code;
       lastParseResult = {
@@ -80,52 +140,18 @@ const processState = async (state: State) => {
         error: undefined,
         errorMarkers: []
       };
-    }
-  } catch (error) {
-    processed.error = error as Error;
-    errorDebug();
-    console.error(error);
-    if (error && typeof error === 'object' && 'hash' in error) {
-      try {
-        let errorString = processed.error.toString();
-        const errorLineText = extractErrorLineText(errorString);
-        const realLineNumber = findMostRelevantLineNumber(errorLineText, state.code);
-
-        let first_line: number, last_line: number, first_column: number, last_column: number;
-        try {
-          ({ first_line, last_line, first_column, last_column } = (error.hash as ErrorHash).loc);
-        } catch {
-          const lineNo = findMostRelevantLineNumber(errorString, state.code);
-          first_line = lineNo;
-          last_line = lineNo + 1;
-          first_column = 0;
-          last_column = 0;
-        }
-
-        if (realLineNumber !== -1) {
-          errorString = replaceLineNumberInErrorMessage(errorString, realLineNumber);
-        }
-
-        processed.error = new Error(errorString);
-        const marker: MarkerData = {
-          endColumn: last_column + (first_column === last_column ? 0 : 5),
-          endLineNumber: last_line + (realLineNumber - first_line),
-          message: errorString || 'Syntax error',
-          severity: 8, // Error
-          startColumn: first_column,
-          startLineNumber: realLineNumber
-        };
-        processed.errorMarkers = [marker];
-      } catch (error) {
-        console.error('Error without line helper', error);
+    } catch (error) {
+      if (token !== stateToken) {
+        return processed;
       }
+      buildParseErrorState(state, processed, error);
+      lastParsedCode = state.code;
+      lastParseResult = {
+        diagramType: undefined,
+        error: processed.error,
+        errorMarkers: processed.errorMarkers
+      };
     }
-    lastParsedCode = state.code;
-    lastParseResult = {
-      diagramType: undefined,
-      error: processed.error,
-      errorMarkers: processed.errorMarkers
-    };
   }
   return processed;
 };
@@ -140,9 +166,11 @@ let updateHash: ((serialized: string) => void) | undefined;
 const persistAndProcess = (): void => {
   const snapshot = $state.snapshot(input) as State;
   writeJSON(CODE_STORE_KEY, snapshot);
-  void processState(snapshot).then((processed) => {
-    validatedCurrent = processed;
-    updateHash?.(processed.serialized);
+  const token = ++stateToken;
+  void processState(snapshot, token).then((processed) => {
+    if (token === stateToken) {
+      publishValidated(processed);
+    }
   });
 };
 
@@ -312,6 +340,29 @@ export const updateCode = (
     }
     state.code = code;
     state.updateDiagram = updateDiagram;
+  });
+};
+
+/**
+ * Blanks the editor content while a diagram is being fetched from the
+ * backend, so the code (and any render) of a previously opened diagram is
+ * never shown. Skips parsing — there is nothing to validate in the blank
+ * state — and drops the pan/zoom of the previous diagram; the fetched
+ * diagram is published afterwards via updateCode.
+ */
+export const resetInputForPendingLoad = (): void => {
+  untrack(() => {
+    // Invalidate any in-flight parse/publish of the previous content.
+    stateToken++;
+    input.code = '';
+    input.pan = undefined;
+    input.zoom = undefined;
+    input.updateDiagram = true;
+    lastParsedCode = undefined;
+    lastParseResult = undefined;
+    const snapshot = $state.snapshot(input) as State;
+    writeJSON(CODE_STORE_KEY, snapshot);
+    publishValidated(validatedStateOf(snapshot, serializeState(snapshot)));
   });
 };
 

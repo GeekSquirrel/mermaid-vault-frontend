@@ -23,17 +23,33 @@ export const syncDiagram = (): void => {
   });
 };
 
-export const initHandler = async (): Promise<void> => {
+export interface InitHandlerOptions {
+  /**
+   * Set when the page loads its state asynchronously (/diagram?id= fetches
+   * the diagram from the backend): initHandler then does no render-pipeline
+   * work at all, so the stale persisted input state is never validated or
+   * rendered. The caller kicks the pipeline once the real state is in place.
+   */
+  deferRender?: boolean;
+}
+
+export const initHandler = async ({
+  deferRender = false
+}: InitHandlerOptions = {}): Promise<void> => {
   applyMigrations();
-  loadStateFromURL();
   await initLoading('Loading Gist...', loadDataFromUrl().catch(console.error));
-  syncDiagram();
-  initURLSubscription();
+  if (!deferRender) {
+    loadStateFromURL();
+    syncDiagram();
+    initURLSubscription();
+  }
   await initAnalytics();
   plausible?.trackPageview({
     url: getAnalyticsSafeUrl()
   });
-  verifyState();
+  if (!deferRender) {
+    verifyState();
+  }
 };
 
 export const isMac = navigator.platform.toUpperCase().includes('MAC');
